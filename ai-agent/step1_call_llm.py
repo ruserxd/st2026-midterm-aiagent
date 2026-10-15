@@ -3,6 +3,8 @@
 重點：對程式來說，LLM 只是一個「輸入文字 -> 輸出文字」的函式，
 背後就是一個 HTTP POST 請求。這裡還沒有 agent。
 
+問句使用英文，與之後 agent 的 system prompt、規格（docstring）、工具說明一致。
+
 執行：python step1_call_llm.py
 """
 
@@ -22,7 +24,6 @@ def call_llm(messages, think="low"):
       role = "user"      使用者說的話
       role = "assistant" 模型之前說過的話
     """
-    # 
     payload = {
         "model": MODEL,
         "messages": messages,
@@ -40,10 +41,10 @@ def call_llm(messages, think="low"):
 
 
 if __name__ == "__main__":
-    # 實驗 1：問一個問題
+    # 實驗 1：問一個問題（同時告訴模型名字，供實驗 2 檢查記憶）
     t0 = time.time()
     answer, thinking = call_llm([
-        {"role": "user", "content": "我的名字是小明。請用一句話說明什麼是單元測試。"},
+        {"role": "user", "content": "My name is Ming. In one sentence, what is a unit test?"},
     ])
     print("=== 實驗 1 ===")
     print("[模型內部思考]", thinking[:300] or "(沒有回傳)")
@@ -52,9 +53,10 @@ if __name__ == "__main__":
 
     # 實驗 2：另開一次呼叫，問剛剛問過的事是否記得
     t1 = time.time()
-    answer2, _ = call_llm([
-        {"role": "user", "content": "我叫什麼名字？我剛剛問了你什麼？"},
+    answer2, thinking2 = call_llm([
+        {"role": "user", "content": "What is my name? What did I just ask you?"},
     ])
     print("=== 實驗 2 ===")
+    print("[模型內部思考]", thinking2[:300] or "(沒有回傳)")
     print("[回答]", answer2)
     print(f"[耗時] {time.time() - t1:.1f} 秒\n")
