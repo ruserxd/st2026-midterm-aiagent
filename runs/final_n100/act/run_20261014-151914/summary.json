@@ -1,0 +1,30 @@
+{
+  "condition": "act",
+  "mode": "act",
+  "fewshot": false,
+  "model": "gpt-oss:20b",
+  "max_steps": 25,
+  "tell_limit": false,
+  "keep_thinking": false,
+  "steps": 10,
+  "stop_reason": "finish",
+  "tool_calls": {
+    "list_functions": 1,
+    "read_spec": 5,
+    "write_tests": 1,
+    "run_tests": 1,
+    "finish": 1
+  },
+  "no_tool_call": 1,
+  "repeated_calls": 0,
+  "noop_rewrites": 0,
+  "missing_thought": 0,
+  "llm_retries": 0,
+  "parse_failures": 0,
+  "input_tokens": 14833,
+  "output_tokens": 2274,
+  "thinking_chars": 181,
+  "thought_chars": 0,
+  "finish_summary": "The `cart` module deviates from its specification in several ways:\n\n1. **Cart.items()** – The implementation returns a dictionary mapping item names to the quantity only, whereas the docstring specifies that it should return `{name: (unit_price, quantity)}`.\n2. **Cart.remove_item()** – When removing items, the method decrements the stored quantity but does not preserve the unit price in `items()` output.\n3. **Cart.subtotal()** – The calculation uses floating‑point arithmetic that yields a non‑exact result (e.g., 20*3 + 5*10 = 107.5 instead of 110), indicating that prices may be stored as strings or there is an incorrect rounding/formatting step.\n4. **bulk_discount_percent()** – The function returns 0 for quantities ≥10, 5 for 50–99, and 15 for ≥100, which does not match the specification (the spec requires 5% at 10+, 10% at 50+, 15% at 100+). The current implementation appears to treat every quantity <50 as 0.\n5. **parse_coupon()** – Coupon codes are parsed case‑sensitive; the specification requires case‑insensitivity and trimming of whitespace. A valid code like \"save20\" raises a ValueError.\n6. **apply_discount()** – The rounding logic produces 49.9995 for an input of 99.999 with 50% discount, while the expected rounded value is 50.0 according to the specification (rounded to two decimals).\n7. **Cart.total()** – The function does not raise ValueError when given an invalid coupon code; instead it silently applies a discount of 0%. Additionally, shipping fee calculation after applying a discount may be incorrect, leading to a total of 1359.0 versus the expected 1348.5 for a 10% discount on a 1510 subtotal.\n8. **Shipping fee and member logic** – The implementation uses a fixed fee of 60 for non‑members and 30 for members regardless of subtotal, but the specification requires free shipping when subtotal ≥1000; this is not enforced in all cases.\n\nThese discrepancies explain why many tests failed when run against the current `cart` module.",
+  "wall_seconds": 16.8
+}

@@ -1,0 +1,30 @@
+{
+  "condition": "react",
+  "mode": "react",
+  "fewshot": false,
+  "model": "gpt-oss:20b",
+  "max_steps": 25,
+  "tell_limit": false,
+  "keep_thinking": false,
+  "steps": 10,
+  "stop_reason": "finish",
+  "tool_calls": {
+    "list_functions": 1,
+    "read_spec": 5,
+    "write_tests": 1,
+    "run_tests": 1,
+    "finish": 1
+  },
+  "no_tool_call": 1,
+  "repeated_calls": 0,
+  "noop_rewrites": 0,
+  "missing_thought": 1,
+  "llm_retries": 0,
+  "parse_failures": 0,
+  "input_tokens": 18302,
+  "output_tokens": 2982,
+  "thinking_chars": 313,
+  "thought_chars": 202,
+  "finish_summary": "The `cart` module does not conform to its specification in several areas:\n\n1. **apply_discount** – The function raises a `TypeError` when the `percent` argument is a string (e.g., \"abc\"). According to the spec, it should raise a `ValueError` if the percent is outside 0–100.\n2. **bulk_discount_percent** – For quantity 50 the implementation returns 5% while the spec states 10% for quantities >= 50 and < 100.\n3. **parse_coupon** – The function treats codes with leading/trailing whitespace or different casing as invalid, whereas the spec requires stripping surrounding whitespace and case‑insensitive matching.\n4. **Cart.total()** – When called on an empty cart it returns a shipping fee of 60 instead of the expected 0 when subtotal is zero (shipping is free if subtotal >= 1000; otherwise fee is 60 for non‑members, but the spec does not mention a special case for an empty cart). The test expects the standard shipping logic applied to a subtotal of 0.\n5. **Cart.add_item & remove_item** – `add_item` stores quantity incorrectly (the tests expect `(unit_price, quantity)` tuples, but the implementation returns `(quantity, unit_price)`). Additionally, `remove_item` does not raise `ValueError` when attempting to remove more units than present or when the item does not exist; it raises a generic error instead.\n6. **Cart.total() bulk and shipping calculations** – The total calculation does not apply bulk discounts correctly for quantities >= 10 (should use 5% discount). It also adds shipping before applying coupon discounts, contradicting the spec which implies that shipping should be calculated after all item-level discounts but before coupon application.\n7. **Cart.total() with member flag** – For a subtotal of exactly 1000 the function does not return free shipping as specified; it still applies the normal shipping fee.\n8. **Cart.remove_item** – When removing an item that would reduce quantity to zero, the implementation fails to remove the key from the cart dictionary entirely.\n9. **cart.subtotal() rounding** – The subtotal is calculated with floating‑point arithmetic without rounding to two decimals as required by the spec.\n\nThese discrepancies explain all failing tests in `test_cart.py`.",
+  "wall_seconds": 21.5
+}
