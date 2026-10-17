@@ -6,6 +6,8 @@
 > - **few-shot 範例的影響遠大於 Thought**：抓到的 bug +0.83 個、誤報 −55%（p < 0.001）。
 > - **Thought 本身沒有幫助**；沒有範例時，agent 反而讀得更少（4.6 → 3.1 份規格，p < 0.001），並且總是增加成本。
 > - 論文「ReAct 優於 Act」的主張，在本設定（小型推理模型、原生工具呼叫、測試生成）下**未被重現**。
+>
+> 看過主實驗結果後另做的延伸實驗（保留內部思考、提高推理強度），記錄在 [Extra.md](Extra.md)。
 
 ---
 
@@ -61,7 +63,7 @@ B4 需要串連 `total`、`parse_coupon`、`shipping_fee` 三份規格才能發�
 - 哪些測試本身是錯的（invalid，即誤報）
 - line / branch coverage
 
-詳見[步驟7](#9-步驟-7獨立評分)。
+詳見[第 9 節](#9-步驟-7獨立評分)。
 
 ---
 
@@ -69,9 +71,12 @@ B4 需要串連 `total`、`parse_coupon`、`shipping_fee` 三份規格才能發�
 
 | 項目 | 設定 |
 |---|---|
-| Ollama 版本 | `0.30.7` |
-| 模型 | `gpt-oss:20b` |
-| 推理強度 | `think = "low"，因為 gpt-oss 內部模型就會推理` |
+| 伺服器 | `sqlab-gsrv-01` |
+| Python | 3.12，虛擬環境 `2026-software-midterm/.venv` |
+| 套件 | `requests`、`pytest 9.1.1`、`coverage 7.16.2` |
+| Ollama 版本 | 0.30.7 |
+| 模型 | `gpt-oss:20b`（ID `17052f91a42e`，13 GB），透過 Ollama 原生 API `/api/chat` |
+| 推理強度 | `think = "low"` |
 | 上下文長度 | `num_ctx = 16384` |
 | 內部思考是否送回歷史 | 否（`KEEP_THINKING = False`） |
 | 最大步數 | 步驟 3–5：15；步驟 6 起（正式實驗）：25 |
@@ -81,6 +86,12 @@ B4 需要串連 `total`、`parse_coupon`、`shipping_fee` 三份規格才能發�
 
 ```text
 2026-software-midterm/
+├── README.md                    主實驗完整紀錄（本檔）
+├── Extra.md                     延伸實驗紀錄
+├── report.md                    期中報告
+├── requirements.txt
+├── submission/                  繳交的 PDF
+├── assets/                      參考論文與課程要求（有著作權，不進 git）
 ├── .venv/
 ├── ai-agent/
 │   ├── step1_call_llm.py        呼叫 LLM
@@ -100,8 +111,9 @@ B4 需要串連 `total`、`parse_coupon`、`shipping_fee` 三份規格才能發�
     ├── fewshot/                 步驟 5 的單次執行
     ├── exp/                     步驟 6 的試跑
     ├── final_attempt1/          步驟 8 第一批（9/25 次因格式錯誤中斷，保留作為可靠性證據）
-    ├── final/                   步驟 8 前導實驗（每條件 n = 5）
-    └── final_n100/              步驟 8 正式實驗（每條件 n = 100）
+    ├── final/                   步驟 8 前導實驗（每條件 n = 5）；step8.log 為執行紀錄
+    └── final_n100/              步驟 8 正式實驗（每條件 n = 100）與延伸實驗；
+                                 step8_main.log、step8_ext.log 為執行紀錄
 ```
 
 ---
@@ -125,11 +137,12 @@ resp = requests.post("http://localhost:11434/api/chat", json=payload)
 | 1 | `My name is Ming. In one sentence, what is a unit test?` | `Need concise definition.` | 一句話的單元測試定義 |
 | 2（另開一次呼叫） | `What is my name? What did I just ask you?` | `Need to answer: can't know your name; user asked "What is my name?" and "What did I just ask you?"` | 不知道名字；只列出這次的兩個問題 |
 
-**發現**
-- **LLM 沒有記憶**：實驗 2 的內部思考只列出這次的兩個問題，完全沒提到上一次呼叫的「Ming」或「單元測試」，表示模型不是不說，而是真的看不到。因此 agent 每一步都必須重送整段歷史（論文的上下文 cₜ）。
-- **內部思考不會留下來**：`thinking` 只存在於這次的回覆中，不在 messages 裡，下一次呼叫就消失。之後的實驗固定不把它送回歷史（`KEEP_THINKING = False`）。
-- **輸出具有隨機性**：同樣的問題重跑一次，回答的用詞與長度都不同；這是正式實驗每個條件要跑多次的原因。
-- **單次耗時參考價值低**：同一個問題，兩次執行分別為 4.2 秒與 0.5 秒（第一次可能需要載入模型）。成本以步驟 8 多次執行的平均值為準。
+- **LLM 沒有記憶**：實驗 2 的內部思考只列出這次的兩個問題，完全沒提到上一次呼叫的「Ming」或「單元測試」。因此 agent 每一步都必須重送整段歷史（論文的上下文 cₜ）。
+- **內部思考不在 messages 裡**：`thinking` 只存在於這次的回覆中，下一次呼叫就看不到。
+- **輸出具有隨機性**：同樣的問題重跑一次，用詞與長度都不同；這是正式實驗每個條件要跑多次的原因。
+- **單次耗時參考價值低**：同一個問題，兩次分別為 4.2 秒與 0.5 秒（第一次可能需要載入模型）。
+
+---
 
 ## 4. 步驟 2：工具（環境）
 
@@ -304,20 +317,22 @@ assert any(item["name"] == "widget" and item["quantity"] == 2 for item in c.item
 n = 1 時，**看不出 Thought 有幫助**：ReAct 多讀一份規格，但多了一個誤報。內部思考字數相近（346 對 372），沒有證據顯示 Act 會在內部多想來補償。
 論文的 Thought 品質來自 **few-shot 範例**（附錄 C），而我們還沒有提供範例 → 這是步驟 5 的動機。
 
-> **環境問題**：上層資料夾的 pytest 設定含 `--cov=subject`，使 `run_tests` 的輸出夾雜 coverage 警告，浪費 token，也讓 Act 的失敗清單被截斷。修正方式是在 pytest 參數加上 `-o addopts=`（清空設定檔的預設參數）。
-
+> **環境問題**：步驟 4 試跑時，`run_tests` 的輸出夾雜 coverage 警告（上層 pytest 設定含 `--cov`），浪費 token 並截斷了 Act 的失敗清單。當時以 `-o addopts=` 解決，但**這個修改沒有寫回 `step3_act_agent.py`**。正式實驗 500 次軌跡中 coverage 警告為 0 筆，結果不受影響。
 
 ### 6.5 驗證：推理會不會留在上下文中
 
+ReAct 的前提是「Thought 會留在上下文中，之後每一步都看得到」；Act 的前提則是「內部思考不會帶到下一步」。這兩點都依賴 Ollama 如何把 messages 轉成模型的 prompt，因此另外驗證。
+
 | 檢查 | 方法 | 結果 |
 |---|---|---|
-| `thought` 參數 | 暗號藏在 thought，要求模型逐字引用 | ✅ 逐字引用出暗號 |
-| `thinking`（最後一則 user 訊息之前） | 比較 thinking 放長文字 vs 留空時的輸入 token 數 | ❌ 差 −5 token，被丟掉 |
-| `thinking`（最後一則 user 訊息之後，同 agent 流程） | 同上 | ✅ 多出 330 token，有放進 prompt |
+| 工具呼叫的 `thought` 參數 | 暗號 `PURPLE-ELEPHANT-42` 只藏在 thought 裡，要求模型逐字引用；另設不含暗號的對照組 | ✅ 逐字引用出暗號；對照組沒有 |
+| `thinking`（位於最後一則 user 訊息**之前**） | 比較 thinking 放約 300 token 長文字 vs 留空時，Ollama 回報的輸入 token 數 | ❌ 差 −5 token：被丟掉 |
+| `thinking`（位於最後一則 user 訊息**之後**，同 agent 流程） | 同上 | ✅ 多出 330 token：有放進 prompt |
 
-- 依 Ollama 的 gpt-oss 樣板，歷史中的 thinking 只有在「最後一則 user 訊息之後」才會放進 prompt（`Show thinking only after last user message`）。
-- 暗號測試中，即使 thinking 確實在 prompt 裡，模型被要求逐字引用時仍會**編造**一段推理。第一次判斷因此誤以為 thinking 沒有送進模型，改用 token 數這種獨立量尺才得到正確答案。→ 模型對自己推理的說明不能直接採信（同 F8）。
-- 正式實驗的 500 次都設定 `KEEP_THINKING = False`；保留內部思考的效果另以 `act+keep`、`react+keep` 延伸實驗檢驗。
+- **thought 參數確實留在上下文中**，所以「Thought 沒有幫助」不是因為模型看不到 Thought，而是 Thought 本身內容空洞（F1）。
+- **thinking 的保留規則**：Ollama 0.30.7 的 gpt-oss 樣板寫明 `Show thinking only after last user message`。主實驗的 500 次都設定 `KEEP_THINKING = False`，所以內部思考一律不會帶到下一步，Act 與 ReAct 的差別就是「推理有沒有以 thought 的形式寫回上下文」。
+- **方法上的教訓**：最初用暗號測試檢查 thinking，模型被要求逐字引用時**編造了一段推理**，讓我們誤以為 thinking 一定被丟掉；改用 token 數這種不依賴模型回答的量尺，才得到正確答案。模型對自己推理的說明不能直接採信（同 F8）。
+
 ---
 
 ## 7. 步驟 5：few-shot 範例
@@ -348,6 +363,8 @@ def strip_thoughts(text):
 ```
 
 範例以文字形式放在 system prompt 中，使 prompt 增加約 1,300～1,700 token，而且**每一步都要重送**。
+
+> **事後發現的設計問題**：範例的 Thought 不只示範「推理的形式」，也包含**具體的測試策略**：「Off-by-one bugs hide at boundaries」「read the specification of EVERY function」「I must not guess」。而且 thermo 的 bug（`< 25` 寫成 `<= 25`）和 B1 是同一類邊界錯誤。Act 版刪除 Thought 行時，這些策略文字也一起被刪掉。影響見 [第 10.7 節](#107-結論)。
 
 ### 7.2 結果（各 1 次）
 
@@ -454,55 +471,41 @@ for attempt in range(MAX_LLM_ATTEMPTS):      # 最多 3 次
 
 | 分類 | 在 fixed 上 | 在 bug 版上 | 意義 |
 |---|---|---|---|
-| bug-revealing | 通過 | 某個版本**失敗**（`failed`） | 抓到 bug |
+| bug-revealing | 通過 | 某個版本失敗 | 抓到 bug |
 | passing | 通過 | 全部通過 | 正確，但沒抓到 bug |
-| assertion-echo | 失敗 | 某個版本通過 | 期望值照抄了 bug 的行為 |
+| assertion-echo | 失敗 | 某個版本（含 buggy）通過 | 期望值照抄了 bug 的行為 |
 | invalid | 失敗 | 全部失敗 | 期望值錯誤（誤報） |
-| collection-error | 無法載入 | — | 測試檔本身無法載入（例如語法錯誤） |
-| skipped | 略過 | — | 不列入判斷 |
-
-兩種特殊情況：
-
-- **`combined`（多個 bug 同時存在）**：某個測試在 B1～B4 單一 bug 版上的結果都和 fixed 相同，只在 `buggy`（4 個 bug 同時存在）上不同，代表它抓到或照抄的是 bug 之間的交互作用。這種情況仍歸類為 bug-revealing 或 assertion-echo，但標記為 `combined`，不計入「抓到的 bug（/4）」。
-- **只在 bug 版無法載入的測試檔**：有些測試檔會在模組層級呼叫 cart（例如在 import 時執行 `parse_coupon("save10")`），所以在 fixed 上可以載入，在 B2 版卻因例外而整份無法載入。此時只用 `<collection error>` 這一列，以**檔案層級**記為抓到該 bug；該版本上沒有結果（`missing`）的個別測試**不算**失敗。
+| collection-error | — | — | 測試檔無法載入 |
 
 ```python
 def classify(outcomes, test):
-    if test == "<collection error>":
-        if outcomes["fixed"].get(test) == "error":
-            return "collection-error", []
-        broken = [b for b in BUG_IDS if outcomes[b].get(test) == "error"] or ["combined"]
-        return "bug-revealing", broken                  # 只在 bug 版無法載入：檔案層級
     on_fixed = outcomes["fixed"].get(test, "missing")
-    if on_fixed == "skipped":
-        return "skipped", []
     on_buggy = outcomes["buggy"].get(test, "missing")
     if on_fixed == "passed":
-        reveals = [b for b in BUG_IDS if outcomes[b].get(test) == "failed"]   # missing 不算失敗
+        reveals = [b for b in BUG_IDS if outcomes[b].get(test) != "passed"]
         if reveals:
             return "bug-revealing", reveals
-        if on_buggy == "failed":
+        if on_buggy != "passed":                 # 只有多個 bug 同時存在時才失敗
             return "bug-revealing", ["combined"]
         return "passing", []
     echoes = [b for b in BUG_IDS if outcomes[b].get(test) == "passed"]
     if echoes:
         return "assertion-echo", echoes
-    if on_buggy == "passed":
+    if on_buggy == "passed":                     # 期望值等於「多個 bug 同時存在」時的輸出
         return "assertion-echo", ["combined"]
     return "invalid", []
 ```
 
-另外以 coverage.py 量測測試在 fixed 上的 line / branch coverage。
+`combined` 不計入「抓到幾個 bug」，因為它無法對應到單一個 bug。這兩個 `combined` 判斷是經 Claude Code 審查後補上的；原本的版本會把「只在 buggy 版通過」的測試誤判為 invalid、把「只在 buggy 版失敗」的測試誤判為 passing。**已確認主實驗 500 次的所有測試中，這兩種情況都是 0 個**，所以主實驗的結果不受影響。
 
-> **量尺修正（2026-10-15）**：初版用 `!= "passed"` 判斷失敗，而且沒有檢查 `buggy` 版。測試檔只在 bug 版無法載入時，該版本上的每個測試都是 `missing`，結果全部被算成 bug-revealing。n = 100 中有 8 次執行受影響，revealing 測試數被高估（最大值 30、31 即由此而來），「抓到的 bug」幾乎不變（差 ≤ 0.03）。`combined` 的情況在 n = 100 中為 0 次。詳見 [REVIEW.md](REVIEW.md)。§10 的數據需以修正後的量尺重新評分。
+另外以 coverage.py 量測測試在 fixed 上的 line / branch coverage。
 
 ### 9.2 量尺驗證
 
 量尺要先驗證過，才能拿來量東西：
 
 - 人工依規格撰寫的參考測試：4/4 bug、0 echo、0 invalid、line / branch coverage 100%。
-- 8 個已知分類的測試全部判斷正確：B1–B4 各一個 echo，以及一個 B1 + B4 同時存在時才成立的 `combined` echo（`test_echo_combined_b1_b4`：50 件 × 22 元、SAVE10，正確為 951，只有 B1 為 1000.5，只有 B4 為 951，B1 + B4 為 940.5）。
-- 執行方式：`python3 step7_evaluate.py --selftest`，只使用 `evaluation/` 底下的檔案，不會寫入 `runs/`。
+- 8 個已知分類的測試全部判斷正確，包含 B1–B4 各一個 echo，以及一個只照抄「B1 與 B4 同時存在」時輸出的 echo（50 件 × 22 元、SAVE10：正確 951、只有 B1 為 1000.5、只有 B4 為 951、兩者同時存在為 940.5）。
 - 檢查 `subject/cart.py` 是否與「正確版 + 全部 bug」一致；曾因檔尾少一個換行而觸發警告（不影響行為）。
 
 ### 9.3 重新評分前導執行
@@ -572,7 +575,7 @@ n = 5 只看得出大的差異（範例），無法判斷 Thought 的效果 → 
 
 格式：平均 [最小–最大]；「k/n」代表 n 次執行中有 k 次。
 
-**(a) 測試品質**
+#### (a) 測試品質
 
 | 指標 | act | react | act+fewshot | react+fewshot | +limit |
 |---|---|---|---|---|---|
@@ -588,7 +591,7 @@ n = 5 只看得出大的差異（範例），無法判斷 Thought 的效果 → 
 | line coverage % | 82.7 | 82.7 | 91.3 | 93.8 | 93.6 |
 | branch coverage % | 74.4 | 73.6 | 86.2 | 90.2 | 90.2 |
 
-**(b) agent 行為**
+#### (b) agent 行為
 
 | 指標 | act | react | act+fewshot | react+fewshot | +limit |
 |---|---|---|---|---|---|
@@ -596,15 +599,15 @@ n = 5 只看得出大的差異（範例），無法判斷 Thought 的效果 → 
 | 讀了 `Cart.items` | 27/100 | **1/100** | 63/100 | 71/100 | 86/100 |
 | 讀了 `Cart.total` | 47/100 | 43/100 | 72/100 | 68/100 | 83/100 |
 | 寫 / 跑測試次數 | 1.3 / 1.2 | 1.6 / 1.4 | 1.6 / 1.6 | 1.4 / 1.2 | 1.3 / 1.3 |
-| 只改註解的重寫 | 0 | 0.0 | 0.1 | 0.0 | 0.0 |
+| 只改註解的重寫 | 0.0 | 0.0 | 0.1 | 0.0 | 0.0 |
 | 步數 | 10.9 [4–18] | 10.3 [5–25] | 14.4 [9–25] | 15.9 [9–25] | 16.0 [12–25] |
 | 不呼叫工具次數 | 0.8 | 0.7 | 0.9 | 1.4 | 0.9 |
-| 重複呼叫次數 | 0 | 0.1 | 0.0 | 0.1 | 0.0 |
+| 重複呼叫次數 | 0.0 | 0.1 | 0.0 | 0.1 | 0.0 |
 | Thought 平均字元數 | — | 24.8 | — | 27.3 | 25.1 |
 | 內部思考總字元數 | 575 | 745 | 443 | 677 | 590 |
 | 停止原因 | finish 100 | finish 98、loop 2 | finish 98、step_limit 2 | finish 99、step_limit 1 | finish 99、step_limit 1 |
 
-**(c) 成本與可靠性**
+#### (c) 成本與可靠性
 
 | 指標 | act | react | act+fewshot | react+fewshot | +limit |
 |---|---:|---:|---:|---:|---:|
@@ -612,9 +615,9 @@ n = 5 只看得出大的差異（範例），無法判斷 Thought 的效果 → 
 | 輸出 token | 2,087 | 2,265 | 2,680 | 2,733 | 2,615 |
 | 耗時（秒） | 17.1 | 19.7 | 22.3 | 24.7 | 25.1 |
 | 模型呼叫重試次數 | 0.1 | 0.3 | 0.1 | 0.4 | 0.5 |
-| 重試後仍無法解析 | 0 | 0 | 0.0 | 0.0 | 0.0 |
+| 重試後仍無法解析 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
 
-**(d) 抓到的 bug 數分布**
+#### (d) 抓到的 bug 數分布
 
 | 條件 | 0 個 | 1 個 | 2 個 | 3 個 | 4 個 |
 |---|---:|---:|---:|---:|---:|
@@ -656,14 +659,15 @@ n = 5 只看得出大的差異（範例），無法判斷 Thought 的效果 → 
 | 無範例時，react 的 token 較多 | 0.041 | 不顯著（傾向） |
 | 告訴上限使讀的規格變多 | 0.011 | 不顯著（傾向） |
 
-**探索性分析**（非事先決定，僅供討論）
+**探索性分析**（非事先決定，僅供討論）：
+
 - 有範例時的 B3 抓到率：act+fewshot 53%、react+fewshot 67%（排列檢定 p = 0.062）。
 - Thought 的效果方向隨範例改變：無範例時 −0.31、有範例時 +0.14，相差 0.45 個 bug（交互作用），未做檢定。
 - 每條件 100 次中，含 echo 測試的執行次數：act 9、react 8、act+fewshot 9、react+fewshot 5、+limit 4。
 
 ### 10.6 案例分析（取自 n = 5 前導實驗）
 
-**案例 A：只讀程式碼 → 教科書級的 assertion echo（react）**
+#### 案例 A：只讀程式碼 → 教科書級的 assertion echo（react）
 
 動作順序：`read_spec` 2 次後，連續 `read_source` 9 次才開始寫測試。測試註解洩漏了期望值的來源：
 
@@ -674,7 +678,7 @@ cart.add_item("gadget", 15, quantity=50)  # 750 base, discount 5% (since <100 an
 規格是 `quantity >= 50 -> 10`，程式（B1）是 `> 50`；註解中的「>50」證明期望值來自程式碼。結果 echo B1，而且 0/4。
 → 實證了步驟 2 推導的機制；**有 Thought 也沒有阻止它跳過規格**。
 
-**案例 B：憑直覺猜規則，剛好猜成 bug 的行為（react）**
+#### 案例 B：憑直覺猜規則，剛好猜成 bug 的行為（react）
 
 ```python
 self.cart.add_item("toy", 500, quantity=2)  # subtotal 1000
@@ -686,12 +690,12 @@ assert total == 800.0
 依規格：1000 → 打 8 折 800 → 800 < 1000 要付運費，會員半價 30 → 應為 830。它用優惠「前」的 1000 判斷免運，正是 B4 的行為。這次它**沒有讀程式碼**，卻仍然產生 echo。
 → **當 bug 實作的是常見的錯誤直覺時，憑直覺猜也會得到同樣的錯誤答案**（F11 的預測成真）。
 
-**案例 C：同一份測試自相矛盾（act+fewshot）**
+#### 案例 C：同一份測試自相矛盾（act+fewshot）
 
 `"saVE15"` 被列在「無效優惠碼」中（echo B2），但同一份測試裡的另一個測試，正確地期望小寫有效（抓到 B2）。
 → agent 不會檢查測試之間的一致性。
 
-**案例 D：為了讓測試通過，一步步摧毀自己的測試（act）**
+#### 案例 D：為了讓測試通過，一步步摧毀自己的測試（act）
 
 | 步驟 | 動作 | 結果 |
 |---:|---|---|
@@ -707,13 +711,17 @@ assert total == 800.0
 ### 10.7 結論
 
 1. **範例的影響遠大於 Thought**（p < 0.001）：抓到的 bug +0.83、誤報 −55%、讀的規格加倍；代價是輸入 token 約 2.6 倍。模型模仿的是範例的**動作**（讀完所有規格），而不是推理（呼應 F7）。
-2. **Thought 本身沒有幫助；沒有範例時，反而使 agent 讀得更少**（4.6 → 3.1 份規格，p < 0.001；`Cart.items` 只在 1/100 次被讀到），抓到的 bug 也有變少的傾向。這與論文第 3.3 節的觀察一致：小型模型以 prompting 執行 ReAct 時表現最差，因為很難從少量範例同時學會推理與行動。
+   **但要注意**：範例的 Thought 含有具體的測試策略（邊界值、讀完所有規格、不要猜），範例的 bug 也和 B1 同類（[第 7.1 節](#71-設計)）。所以「範例的效果」混合了「模仿範例」與「策略提示」兩種影響，本實驗無法分開。
+2. **Thought 本身沒有幫助；沒有範例時，反而使 agent 讀得更少**（4.6 → 3.1 份規格，p < 0.001；`Cart.items` 只在 1/100 次被讀到），抓到的 bug 也有變少的傾向。
+   有範例時，ReAct 版的範例**比 Act 版多了策略文字**（Act 版刪掉了含策略的 Thought 行），抓到的 bug 卻仍沒有顯著差異（+0.14，p = 0.32），這反而加強了「Thought 沒有幫助」的結論。
+   論文第 3.3 節也有相似的觀察：「With PaLM-8/62B, prompting ReAct performs worst among four methods due to the difficulty to learn both reasoning and acting from in-context examples.」不過論文用的是非推理模型、任務是問答，條件與本實驗不同，只能說趨勢相似。
 3. **Thought 總是增加成本**（有範例時輸入 token +22%，p < 0.001），而且 Thought 平均只有約 25 個字元，多半是動作標籤（F1）。
 4. **論文「ReAct 優於 Act」的主張，在本設定（小型推理模型、原生工具呼叫、測試生成）下未被重現。**
 5. **F10 假設被推翻，而且方向相反**：告訴步數上限後，讀的規格反而增加（7.7 → 8.3，p = 0.011，校正後不顯著）。
 6. **assertion echo 很少見**（每次執行平均約 0.1 個）；主要問題是**誤報**與**沒讀規格就猜介面**。system prompt 中「期望值必須來自規格」的規則，可能是 echo 很少的原因（未驗證）。
 7. **多跳 bug（B4）幾乎抓不到**（2–7%），這是所有條件共同的限制。
 8. **單次執行的可靠性很低**：每個條件都同時出現過 0/4 與 3/4 以上。
+9. **Thought 使 agent 更傾向讀程式碼**（事後分析）：平均 `read_source` 次數 react 1.00、act 0.35，約 3 倍，與案例 A 一致。因 `read_source` 也含 docstring，若一併算成「看過規格」，結論 2 的差距由 1.54 份縮小為約 1.0 份（4.70 對 3.71），方向不變。
 
 ---
 
@@ -725,9 +733,15 @@ assert total == 800.0
 | 指標解析度 | 只有 4 個 bug，難度分布不均：B1、B2 太簡單（約 70–90%）、B4 太難（2–7%），實際上主要靠 B3 區分條件 |
 | 規格瑕疵 | `Cart` 類別說明洩漏了內部儲存格式（`name -> (unit_price, quantity)`），可能誘發 `items()` 的錯誤猜測 |
 | prompt 設計 | Thought 的說明只有一句；範例只有一條，而且以文字形式放在 system prompt，而不是真正的工具呼叫歷史 |
+| 範例含策略提示 | 範例的 Thought 含有具體測試策略，範例的 bug 也和 B1 同類；「範例的效果」與「策略提示的效果」混在一起（[第 7.1 節](#71-設計)、[第 10.7 節](#107-結論)） |
 | 推理模型 | gpt-oss 的內部思考無法完全關閉，所以 Act 並非「完全沒有推理」 |
 | 規則的影響 | 「期望值必須來自規格」的規則在所有條件都存在，會壓低 echo 的絕對數量 |
-| 統計 | 16 個檢定未事先校正；探索性分析並非事先決定 |
+| 統計 | 四個比較是事先決定的，但 Bonferroni 校正是看到結果後才決定採用的；探索性分析並非事先決定 |
+| 設定的決定時機 | 步驟 6 的設定（步數上限 25、不告訴上限）是看過步驟 5 的單次結果後才決定的，屬於正常的開發流程，但正式實驗的設定並非全部事前決定 |
+| 上下文溢出 | 500 次中有 1 次（`act+fewshot`）某一步的輸入達到 16,383 token，接近上限，前面的內容可能被截斷 |
+| 成本被低估 | 失敗而重試的模型呼叫不計入 token；react 類條件的重試較多（每次 0.3–0.5 次，act 類 0.1 次），所以 Thought 的成本其實被低估，方向對結論有利 |
+| collection error | 測試檔無法載入時算成 0 個 bug（react+fewshot 約 8%、act+fewshot 約 6%、其他約 2%）；這是 agent 的品質問題，算進去合理，但「0 個 bug」有一部分來自這個原因 |
+| 工具的小瑕疵 | `step2_tools.py` 找不到函式時，提示文字仍是舊的文字格式（`list_functions[]`）；為了讓延伸實驗與主實驗在相同環境下執行，沒有修改 |
 | 溫度 | 使用 Ollama 預設值，沒有明確設定 |
 
 ---
@@ -741,7 +755,7 @@ assert total == 800.0
 | 模型回應空白、HTTP 500 | gpt-oss 內建工具呼叫格式，與文字協定衝突 | 改用 Ollama 原生 `tools` 參數 |
 | `tool()` 函式參數名衝突 | 工具參數也叫 `name` | 改名為 `tool_name` |
 | `step1_call_llm.py` 語法錯誤 | 加註解時多打一個字元，所有 import 它的檔案都無法執行 | 用 `python3 -m py_compile` 檢查 |
-| Observation 夾雜 coverage 警告 | 上層 pytest 設定檔含 `--cov` | pytest 加上 `-o addopts=` |
+| Observation 夾雜 coverage 警告 | 上層 pytest 設定檔含 `--cov` | 試跑時加 `-o addopts=`，但未寫回程式；正式實驗未受影響（[第 6.4 節](#64-小結)） |
 | 背景執行一啟動就結束 | 伺服器上的 `step6_agent.py` 仍是舊版；25 次全部失敗卻只花 0 秒 | 覆蓋新版；正式執行前先用最小設定在前景試跑 |
 | log 看不到進度 | Python 輸出導向檔案時會緩衝 | `python3 -u` |
 | 同時執行兩批的風險 | 所有 agent 共用 `workspace/test_cart.py` | 一次只跑一批；改用 tmux 管理 |
@@ -749,9 +763,3 @@ assert total == 800.0
 | 長時間實驗可能中斷 | 斷線、伺服器重開 | `--runs` 改為「每條件總共 N 次」，重跑同一個指令即可接續 |
 
 ---
-
-## 13. 待辦與後續
-
-- [ ] 案例 D：將各版本測試分別評分，確認是否刪除了會揭露 bug 的測試
-- [ ] 探索性：以 mutation score 作為更細緻的指標（需標明為事後分析）
-- [ ] 撰寫報告：Introduction、Implementation、Reflections、AI 使用聲明
